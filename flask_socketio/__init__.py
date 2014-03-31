@@ -11,29 +11,37 @@ from test_client import SocketIOTestClient
 
 
 class SocketIOMiddleware(object):
-    def __init__(self, app, socket):
+    def __init__(self, app, socket, **kwargs):
         self.app = app
         if app.debug:
             app.wsgi_app = DebuggedApplication(app.wsgi_app, evalex=True)
         self.wsgi_app = app.wsgi_app
         self.socket = socket
 
+        self.kwargs = kwargs
+
     def __call__(self, environ, start_response):
         path = environ['PATH_INFO'].strip('/')
         if path is not None and path.startswith('socket.io'):
-            socketio_manage(environ, self.socket.get_namespaces(), self.app)
+            socketio_manage(
+                environ,
+                self.socket.get_namespaces(),
+                self.app,
+
+                **self.kwargs
+            )
         else:
             return self.wsgi_app(environ, start_response)
 
 class SocketIO(object):
-    def __init__(self, app=None):
+    def __init__(self, app=None, **kwargs):
         if app:
-            self.init_app(app)
+            self.init_app(app, **kwargs)
         self.messages = {}
         self.rooms = {}
 
-    def init_app(self, app):
-        app.wsgi_app = SocketIOMiddleware(app, self)
+    def init_app(self, app, **kwargs):
+        app.wsgi_app = SocketIOMiddleware(app, self, **kwargs)
 
     def get_namespaces(self, base_namespace=BaseNamespace):
         class GenericNamespace(base_namespace):
