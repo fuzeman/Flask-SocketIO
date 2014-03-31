@@ -1,10 +1,11 @@
 from gevent import monkey
+
 monkey.patch_all()
 
 from socketio import socketio_manage
 from socketio.server import SocketIOServer
-from socketio.namespace import BaseNamespace
 from flask import request, session
+from flask.ext.socketio.namespace import FlaskNamespace
 from werkzeug.debug import DebuggedApplication
 from werkzeug.serving import run_with_reloader
 from test_client import SocketIOTestClient
@@ -22,7 +23,10 @@ class SocketIOMiddleware(object):
 
     def __call__(self, environ, start_response):
         path = environ['PATH_INFO'].strip('/')
+
         if path is not None and path.startswith('socket.io'):
+            environ['flask_socketio'] = self.socket
+
             socketio_manage(
                 environ,
                 self.socket.get_namespaces(),
@@ -34,85 +38,27 @@ class SocketIOMiddleware(object):
             return self.wsgi_app(environ, start_response)
 
 class SocketIO(object):
-    def __init__(self, app=None, **kwargs):
+    def __init__(self, app=None, ns_base=FlaskNamespace, **kwargs):
         if app:
             self.init_app(app, **kwargs)
+
+        self.ns_base = ns_base
+
+        self.namespaces = {}
         self.messages = {}
         self.rooms = {}
 
     def init_app(self, app, **kwargs):
         app.wsgi_app = SocketIOMiddleware(app, self, **kwargs)
 
-    def get_namespaces(self, base_namespace=BaseNamespace):
-        class GenericNamespace(base_namespace):
-            socketio = self
-            base_emit = base_namespace.emit
-            base_send = base_namespace.send
-
-            def initialize(self):
-                self.rooms = set()
-
-            def process_event(self, packet):
-                message = packet['name']
-                args = packet['args']
-                app = self.request
-                return self.socketio._dispatch_message(app, self, message, args)
-
-            def join_room(self, room):
-                if self.socketio._join_room(self, room):
-                    self.rooms.add(room)
-
-            def leave_room(self, room):
-                if self.socketio._leave_room(self, room):
-                    self.rooms.remove(room)
-
-            def recv_connect(self):
-                ret = super(GenericNamespace, self).recv_connect()
-                app = self.request
-                self.socketio._dispatch_message(app, self, 'connect')
-                return ret
-
-            def recv_disconnect(self):
-                app = self.request
-                self.socketio._dispatch_message(app, self, 'disconnect')
-                for room in self.rooms.copy():
-                    self.leave_room(room)
-                return super(GenericNamespace, self).recv_disconnect()
-
-            def recv_message(self, data):
-                app = self.request
-                return self.socketio._dispatch_message(app, self, 'message', [data])
-
-            def recv_json(self, data):
-                app = self.request
-                return self.socketio._dispatch_message(app, self, 'json', [data])
-
-            def emit(self, event, *args, **kwargs):
-                ns_name = kwargs.pop('namespace', None)
-                broadcast = kwargs.pop('broadcast', False)
-                room = kwargs.pop('room', None)
-                if broadcast or room:
-                    if ns_name is None:
-                        ns_name = self.ns_name
-                    return self.socketio.emit(event, *args, namespace=ns_name, room=room)
-                if ns_name is None:
-                    return self.base_emit(event, *args, **kwargs)
-                return request.namespace.socket[ns_name].base_emit(event, *args, **kwargs)
-
-            def send(self, message, json=False, ns_name=None, callback=None,
-                     broadcast=False, room=None):
-                if broadcast or room:
-                    if ns_name is None:
-                        ns_name = self.ns_name
-                    return self.socketio.send(message, json, ns_name, room)
-                if ns_name is None:
-                    return request.namespace.base_send(message, json, callback)
-                return request.namespace.socket[ns_name].base_send(message, json, callback)
-
-        namespaces = {}
+    def get_namespaces(self):
         for ns_name in self.messages.keys():
-            namespaces[ns_name] = GenericNamespace
-        return namespaces
+            if ns_name in self.namespaces:
+                continue
+
+            self.namespaces[ns_name] = self.ns_base
+
+        return self.namespaces
 
     def _dispatch_message(self, app, namespace, message, args=[]):
         if namespace.ns_name not in self.messages:
