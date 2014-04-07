@@ -56,20 +56,28 @@ class FlaskNamespace(BaseNamespace):
         ns_name = kwargs.pop('namespace', None)
         broadcast = kwargs.pop('broadcast', False)
         room = kwargs.pop('room', None)
+
         if broadcast or room:
             if ns_name is None:
                 ns_name = self.ns_name
+
             return self.socketio.emit(event, *args, namespace=ns_name, room=room)
+
         if ns_name is None:
-            return self.base_emit(event, *args, **kwargs)
+            return super(FlaskNamespace, self).emit(event, *args, **kwargs)
+
         return request.namespace.socket[ns_name].base_emit(event, *args, **kwargs)
 
     def send(self, message, json=False, ns_name=None, callback=None,
              broadcast=False, room=None):
+
         if broadcast or room:
             if ns_name is None:
                 ns_name = self.ns_name
+
             return self.socketio.send(message, json, ns_name, room)
+
         if ns_name is None:
             return request.namespace.base_send(message, json, callback)
+
         return request.namespace.socket[ns_name].base_send(message, json, callback)
