@@ -116,11 +116,11 @@ class SocketIO(object):
         room = kwargs.pop('room', None)
         if room:
             for client in self.rooms.get(ns_name, {}).get(room, set()):
-                client.base_emit(event, *args, **kwargs)
+                super(FlaskNamespace, client).emit(event, *args, **kwargs)
         else:
             for sessid, socket in self.server.sockets.items():
                 if socket.active_ns.get(ns_name):
-                    socket[ns_name].base_emit(event, *args, **kwargs)
+                    super(FlaskNamespace, socket[ns_name]).emit(event, *args, **kwargs)
 
     def send(self, message, json=False, namespace=None, room=None):
         ns_name = namespace
@@ -128,11 +128,11 @@ class SocketIO(object):
             ns_name = ''
         if room:
             for client in self.rooms.get(ns_name, {}).get(room, set()):
-                client.base_send(message, json)
+                super(FlaskNamespace, client).send(message, json)
         else:
             for sessid, socket in self.server.sockets.items():
                 if socket.active_ns.get(ns_name):
-                    socket[ns_name].base_send(message, json)
+                    super(FlaskNamespace, socket[ns_name]).send(message, json)
 
     def run(self, app, host=None, port=None, **kwargs):
         if host is None:
